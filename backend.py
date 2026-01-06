@@ -1,68 +1,44 @@
-from flask import Flask, request, jsonify, render_template_string
+from flask import Flask, request, jsonify
 from collections import deque
 import time
 
 app = Flask(__name__)
 
+# Messages waiting to be delivered to Roblox
 roblox_queue = deque(maxlen=100)
-recent_messages = deque(maxlen=50)
 
 @app.route("/api/roblox-to-discord", methods=["POST"])
 def roblox_to_discord():
     data = request.json
-    msg = {
-        "from": "Roblox",
+    if not data:
+        return {"error": "Invalid payload"}, 400
+
+    # Forwarded to Discord bot via polling
+    roblox_queue.append({
         "sender": data.get("sender"),
         "message": data.get("message"),
-        "time": time.strftime("%H:%M:%S")
-    }
-    roblox_queue.append(msg)
-    recent_messages.appendleft(msg)
+        "timestamp": int(time.time())
+    })
     return {"status": "ok"}
 
 @app.route("/api/discord-to-roblox", methods=["POST"])
 def discord_to_roblox():
     data = request.json
-    msg = {
-        "from": "Discord",
+    if not data:
+        return {"error": "Invalid payload"}, 400
+
+    roblox_queue.append({
         "sender": data.get("sender"),
         "message": data.get("message"),
-        "time": time.strftime("%H:%M:%S")
-    }
-    roblox_queue.append(msg)
-    recent_messages.appendleft(msg)
+        "timestamp": int(time.time())
+    })
     return {"status": "ok"}
 
 @app.route("/api/get-for-roblox", methods=["GET"])
 def get_for_roblox():
-    msgs = list(roblox_queue)
+    messages = list(roblox_queue)
     roblox_queue.clear()
-    return jsonify(msgs)
+    return jsonify(messages)
 
-@app.route("/dashboard")
-def dashboard():
-    return render_template_string("""
-    <html>
-    <head>
-        <title>Relay Dashboard</title>
-        <meta http-equiv="refresh" content="2">
-        <style>
-            body { font-family: Arial; background: #111; color: #eee; }
-            .msg { padding: 6px; border-bottom: 1px solid #333; }
-            .roblox { color: #4CAF50; }
-            .discord { color: #7289DA; }
-        </style>
-    </head>
-    <body>
-        <h2>Relay Status</h2>
-        <p>Queue size: {{ queue_size }}</p>
-        <hr>
-        {% for m in messages %}
-            <div class="msg {{ m.from|lower }}">
-                [{{ m.time }}] <b>{{ m.from }}</b> —
-                <b>{{ m.sender }}</b>: {{ m.message }}
-            </div>
-        {% endfor %}
-    </body>
-    </html>
-    """, messages=recent_messages, queue_size=len(roblox_queue))
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=5000)
